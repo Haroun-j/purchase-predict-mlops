@@ -26,8 +26,18 @@ if ! gcloud container clusters describe "${GKE_CLUSTER}" --zone "${GKE_ZONE}" >/
     --enable-autoscaling \
     --min-nodes "1" \
     --max-nodes "5" \
-    --disk-size "10" \
+    --disk-size "20" \
     --release-channel "regular"
+fi
+
+CLUSTER_STATUS="$(gcloud container clusters describe "${GKE_CLUSTER}" --zone "${GKE_ZONE}" --format='value(status)' 2>/dev/null || true)"
+echo "CLUSTER_STATUS=${CLUSTER_STATUS}"
+
+if [ "${CLUSTER_STATUS}" != "RUNNING" ]; then
+  echo "Cluster exists but is not RUNNING. Delete it and recreate it with a larger disk."
+  echo "Suggested command:"
+  echo "gcloud container clusters delete ${GKE_CLUSTER} --zone ${GKE_ZONE} --quiet"
+  exit 1
 fi
 
 gcloud container clusters get-credentials "${GKE_CLUSTER}" --zone "${GKE_ZONE}"

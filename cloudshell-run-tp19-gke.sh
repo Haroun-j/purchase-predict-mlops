@@ -29,7 +29,14 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --role="roles/artifactregistry.reader" >/dev/null
 
-gcloud container clusters describe "${GKE_CLUSTER}" --zone "${GKE_ZONE}" >/dev/null
+CLUSTER_STATUS="$(gcloud container clusters describe "${GKE_CLUSTER}" --zone "${GKE_ZONE}" --format='value(status)')"
+echo "CLUSTER_STATUS=${CLUSTER_STATUS}"
+
+if [ "${CLUSTER_STATUS}" != "RUNNING" ]; then
+  echo "The GKE cluster must be RUNNING before launching Cloud Build."
+  echo "Current status: ${CLUSTER_STATUS}"
+  exit 1
+fi
 
 gcloud builds submit . \
   --config cloudbuild.gke.yaml \
