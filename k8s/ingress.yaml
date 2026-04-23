@@ -3,8 +3,9 @@ kind: Ingress
 metadata:
   name: app-ingress
   namespace: api-purchase
+  annotations:
+    kubernetes.io/ingress.class: "gce"
 spec:
-  ingressClassName: gce
   rules:
     - http:
         paths:
