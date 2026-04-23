@@ -1,0 +1,10 @@
+services:
+  api:
+    build: .
+    image: purchase_predict_api:latest
+    env_file:
+      - env.list
+    ports:
+      - "8080:80"
+    volumes:
+      - ../notebooks/purchase-predict/mlruns:/mlruns:ro
