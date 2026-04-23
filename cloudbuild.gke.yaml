@@ -1,0 +1,129 @@
+steps:
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: PREPARE_MLRUNS
+    entrypoint: /bin/sh
+    args:
+      - "-c"
+      - |
+        rm -rf mlruns
+        mkdir -p mlruns
+        gcloud storage cp --recursive "${_MLRUNS_GCS_PATH}" ./mlruns
+        if [ -d mlruns/mlruns ]; then
+          cp -R mlruns/mlruns/. mlruns/
+          rm -rf mlruns/mlruns
+        fi
+        test -d mlruns
+
+  - name: "ghcr.io/astral-sh/uv:python3.12-trixie-slim"
+    id: TEST
+    entrypoint: /bin/sh
+    args:
+      - "-c"
+      - |
+        apt-get update &&
+        apt-get install -y --no-install-recommends libgomp1 &&
+        rm -rf /var/lib/apt/lists/* &&
+        uv sync &&
+        uv run pytest
+    env:
+      - "ENV=${_ENV}"
+      - "MLFLOW_SERVER=${_TRACKING_URI}"
+      - "MLFLOW_REGISTRY_NAME=${_REGISTRY_NAME}"
+    waitFor:
+      - "PREPARE_MLRUNS"
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: BUILD
+    args:
+      - "build"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:${SHORT_SHA}"
+      - "."
+    waitFor:
+      - "TEST"
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: PUSH
+    args:
+      - "push"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:${SHORT_SHA}"
+    waitFor:
+      - "BUILD"
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: RENDER_K8S
+    entrypoint: /bin/sh
+    args:
+      - "-c"
+      - |
+        : > config.yaml.tpl
+        for file in k8s/ns.yaml k8s/deployment.yaml k8s/service.yaml k8s/ingress.yaml; do
+          cat "$file" >> config.yaml.tpl
+          printf '\n---\n' >> config.yaml.tpl
+        done
+        sed "s#DOCKER_TAG#${SHORT_SHA}#g" config.yaml.tpl > config.yaml
+        test -f config.yaml
+    waitFor:
+      - "PUSH"
+
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: DEPLOY_TO_GKE
+    args:
+      - "apply"
+      - "-f"
+      - "config.yaml"
+    env:
+      - "CLOUDSDK_COMPUTE_ZONE=${_GKE_ZONE}"
+      - "CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}"
+      - "KUBECONFIG=/tmp/kubeconfig"
+    waitFor:
+      - "RENDER_K8S"
+
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: VERIFY_GKE_DEPLOYMENT
+    args:
+      - "rollout"
+      - "status"
+      - "deployment/purchase-predict"
+      - "--namespace"
+      - "api-purchase"
+      - "--timeout"
+      - "600s"
+    env:
+      - "CLOUDSDK_COMPUTE_ZONE=${_GKE_ZONE}"
+      - "CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}"
+      - "KUBECONFIG=/tmp/kubeconfig"
+    waitFor:
+      - "DEPLOY_TO_GKE"
+
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: LIST_GKE_RESOURCES
+    args:
+      - "get"
+      - "pods,service,ingress"
+      - "--namespace"
+      - "api-purchase"
+    env:
+      - "CLOUDSDK_COMPUTE_ZONE=${_GKE_ZONE}"
+      - "CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}"
+      - "KUBECONFIG=/tmp/kubeconfig"
+    waitFor:
+      - "VERIFY_GKE_DEPLOYMENT"
+
+images:
+  - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:${SHORT_SHA}"
+
+logsBucket: gs://purchase-predict-haroun-2026/logs_build_cloud_build
+
+timeout: 2400s
+
+substitutions:
+  _ENV: staging
+  _GKE_CLUSTER: purchase-predict-api
+  _GKE_ZONE: europe-west1-b
+  _MLRUNS_GCS_PATH: gs://purchase-predict-haroun-2026/preprod/latest/mlruns
+  _REGION: europe-west1
+  _REGISTRY_NAME: purchase_predict
+  _REPOSITORY: purchased-docker
+  _SERVICE: purchase-predict-api
+  _TRACKING_URI: file:///workspace/mlruns

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: purchase-predict
+  namespace: api-purchase
+  labels:
+    app: purchase-predict
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pod-purchase-predict
+  template:
+    metadata:
+      labels:
+        app: pod-purchase-predict
+    spec:
+      containers:
+        - name: pod-purchase-predict
+          image: europe-west1-docker.pkg.dev/purchase-predict-mlops/purchased-docker/purchase-predict-api:DOCKER_TAG
+          imagePullPolicy: Always
+          env:
+            - name: PORT
+              value: "80"
+            - name: ENV
+              value: "staging"
+            - name: MLFLOW_SERVER
+              value: "file:///app/mlruns"
+            - name: MLFLOW_REGISTRY_NAME
+              value: "purchase_predict"
+            - name: WEB_CONCURRENCY
+              value: "1"
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1"

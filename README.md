@@ -38,3 +38,18 @@ Le fichier `cloudbuild.yaml` :
 - teste l'API
 - construit et pousse l'image vers Artifact Registry
 - redeploie `purchase-predict-api` sur Cloud Run
+
+Preparation Kubernetes pour TP19 :
+
+```bash
+chmod +x cloudshell-create-tp19-gke-cluster.sh
+./cloudshell-create-tp19-gke-cluster.sh
+
+chmod +x cloudshell-run-tp19-gke.sh
+./cloudshell-run-tp19-gke.sh
+```
+
+Les fichiers associes :
+
+- `k8s/` contient `ns.yaml`, `deployment.yaml`, `service.yaml` et `ingress.yaml`
+- `cloudbuild.gke.yaml` construit l'image, la pousse dans Artifact Registry et applique les manifests sur GKE
