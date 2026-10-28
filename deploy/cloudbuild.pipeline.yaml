@@ -1,0 +1,81 @@
+# Train the model on Cloud Build.
+#
+# CI runs the unit tests, CD runs `kedro run` against the primary table stored in the
+# bucket, POST_CD_TESTS runs the tests that need a trained model, and the resulting
+# data/ and mlruns/ folders are exported to GCS under the build id.
+# Submit from the repository root: deploy/scripts/run-training-build.sh
+steps:
+  - name: "ghcr.io/astral-sh/uv:python3.12-trixie-slim"
+    id: CI
+    dir: pipeline
+    entrypoint: /bin/sh
+    args:
+      - "-c"
+      - |
+        chmod a+x install.sh &&
+        ./install.sh &&
+        uv sync &&
+        uv run pytest tests/test_run.py tests/pipelines/loading tests/pipelines/processing
+    env:
+      - "UV_CACHE_DIR=/root/.cache/uv"
+      - "GCP_PROJECT_ID=$PROJECT_ID"
+      - "GCS_TEST_FOLDER=${_BUCKET}/data-test.csv"
+
+  - name: "ghcr.io/astral-sh/uv:python3.12-trixie-slim"
+    id: CD
+    dir: pipeline
+    entrypoint: /bin/sh
+    args:
+      - "-c"
+      - |
+        set -e
+        chmod a+x install.sh
+        ./install.sh
+        uv sync
+        cat > conf/local/parameters_loading.yml <<'EOF'
+        gcp_project_id: $PROJECT_ID
+        gcs_primary_folder: ${_BUCKET}/data/03_primary
+        EOF
+        uv run kedro run --params automl_max_evals=${_AUTOML_MAX_EVALS}
+    env:
+      - "ENV=${_ENV}"
+      - "MLFLOW_SERVER=file:///workspace/pipeline/mlruns"
+      - "DO_NOT_TRACK=1"
+      - "UV_CACHE_DIR=/root/.cache/uv"
+    waitFor: ["CI"]
+
+  - name: "ghcr.io/astral-sh/uv:python3.12-trixie-slim"
+    id: POST_CD_TESTS
+    dir: pipeline
+    entrypoint: /bin/sh
+    args:
+      - "-c"
+      - |
+        chmod a+x install.sh &&
+        ./install.sh &&
+        uv sync &&
+        uv run pytest
+    env:
+      - "UV_CACHE_DIR=/root/.cache/uv"
+    waitFor: ["CD"]
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: EXPORT_ARTIFACTS
+    dir: pipeline
+    entrypoint: /bin/sh
+    args:
+      - "-c"
+      - |
+        gcloud storage cp --recursive data gs://${_BUCKET}/cloud-build-artifacts/${BUILD_ID}/data &&
+        gcloud storage cp --recursive mlruns gs://${_BUCKET}/cloud-build-artifacts/${BUILD_ID}/mlruns
+    waitFor: ["POST_CD_TESTS"]
+
+options:
+  machineType: "N1_HIGHCPU_8"
+
+timeout: 1200s
+
+substitutions:
+  _AUTOML_MAX_EVALS: "4"
+  _BUCKET: your-gcs-bucket
+  _ENV: staging

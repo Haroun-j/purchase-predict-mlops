@@ -1,0 +1,16 @@
+# Files not uploaded to Cloud Build when a config in deploy/ is submitted from the root.
+.git/
+.venv/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+*.log
+.env
+api/.env
+docs/
+pipeline/conf/local/**
+pipeline/mlruns/**
+pipeline/.viz/
+# The builds fetch the MLflow store from GCS; the small store shipped with the API is not needed.
+api/mlruns/**

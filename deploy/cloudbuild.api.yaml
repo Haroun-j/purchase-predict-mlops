@@ -1,6 +1,13 @@
+# Build the API image and redeploy the Cloud Run service.
+#
+# Submitted from the repository root, by hand with deploy/scripts/deploy-api-cloud-run.sh
+# or by deploy/cloudbuild.preprod.yaml right after a model has been trained. The MLflow
+# store exported by the training build is fetched from GCS and baked into the image, so
+# the service needs no tracking server at runtime.
 steps:
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
     id: PREPARE_MLRUNS
+    dir: api
     entrypoint: /bin/sh
     args:
       - "-c"
@@ -12,10 +19,11 @@ steps:
           cp -R mlruns/mlruns/. mlruns/
           rm -rf mlruns/mlruns
         fi
-        test -d mlruns
+        test -d mlruns/models
 
   - name: "ghcr.io/astral-sh/uv:python3.12-trixie-slim"
     id: TEST
+    dir: api
     entrypoint: /bin/sh
     args:
       - "-c"
@@ -27,7 +35,7 @@ steps:
         uv run pytest
     env:
       - "ENV=${_ENV}"
-      - "MLFLOW_SERVER=${_TRACKING_URI}"
+      - "MLFLOW_SERVER=file:///workspace/api/mlruns"
       - "MLFLOW_REGISTRY_NAME=${_REGISTRY_NAME}"
     waitFor: ["PREPARE_MLRUNS"]
 
@@ -37,7 +45,7 @@ steps:
       - "build"
       - "-t"
       - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:${_IMAGE_TAG}"
-      - "."
+      - "api"
     waitFor: ["TEST"]
 
   - name: "gcr.io/cloud-builders/docker"
@@ -64,7 +72,7 @@ steps:
       - "--port"
       - "80"
       - "--service-account"
-      - "purchase-predict-api-sa@$PROJECT_ID.iam.gserviceaccount.com"
+      - "${_SERVICE_ACCOUNT}@$PROJECT_ID.iam.gserviceaccount.com"
       - "--memory"
       - "1Gi"
       - "--cpu"
@@ -78,16 +86,14 @@ steps:
 images:
   - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:${_IMAGE_TAG}"
 
-logsBucket: gs://purchase-predict-haroun-2026/logs_build_cloud_build
-
 timeout: 1800s
 
 substitutions:
   _ENV: staging
   _IMAGE_TAG: latest
-  _MLRUNS_GCS_PATH: gs://purchase-predict-haroun-2026/preprod/latest/mlruns
+  _MLRUNS_GCS_PATH: gs://your-gcs-bucket/preprod/latest/mlruns
   _REGION: europe-west1
   _REGISTRY_NAME: purchase_predict
   _REPOSITORY: purchased-docker
   _SERVICE: purchase-predict-api
-  _TRACKING_URI: file:///workspace/mlruns
+  _SERVICE_ACCOUNT: purchase-predict-api-sa

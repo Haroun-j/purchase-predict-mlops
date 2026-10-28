@@ -1,6 +1,12 @@
+# Build the API image and roll it out on the GKE cluster (production).
+#
+# Submitted from the repository root, by hand with deploy/scripts/deploy-api-gke.sh or by
+# deploy/cloudbuild.prod.yaml. Same test/build/push steps as the Cloud Run build, then the
+# manifests in deploy/k8s are rendered with the new image tag and applied.
 steps:
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
     id: PREPARE_MLRUNS
+    dir: api
     entrypoint: /bin/sh
     args:
       - "-c"
@@ -12,10 +18,11 @@ steps:
           cp -R mlruns/mlruns/. mlruns/
           rm -rf mlruns/mlruns
         fi
-        test -d mlruns
+        test -d mlruns/models
 
   - name: "ghcr.io/astral-sh/uv:python3.12-trixie-slim"
     id: TEST
+    dir: api
     entrypoint: /bin/sh
     args:
       - "-c"
@@ -27,10 +34,9 @@ steps:
         uv run pytest
     env:
       - "ENV=${_ENV}"
-      - "MLFLOW_SERVER=${_TRACKING_URI}"
+      - "MLFLOW_SERVER=file:///workspace/api/mlruns"
       - "MLFLOW_REGISTRY_NAME=${_REGISTRY_NAME}"
-    waitFor:
-      - "PREPARE_MLRUNS"
+    waitFor: ["PREPARE_MLRUNS"]
 
   - name: "gcr.io/cloud-builders/docker"
     id: BUILD
@@ -38,17 +44,15 @@ steps:
       - "build"
       - "-t"
       - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:${SHORT_SHA}"
-      - "."
-    waitFor:
-      - "TEST"
+      - "api"
+    waitFor: ["TEST"]
 
   - name: "gcr.io/cloud-builders/docker"
     id: PUSH
     args:
       - "push"
       - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:${SHORT_SHA}"
-    waitFor:
-      - "BUILD"
+    waitFor: ["BUILD"]
 
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
     id: RENDER_K8S
@@ -57,27 +61,22 @@ steps:
       - "-c"
       - |
         : > config.yaml.tpl
-        for file in k8s/ns.yaml k8s/deployment.yaml k8s/service.yaml k8s/ingress.yaml; do
+        for file in deploy/k8s/ns.yaml deploy/k8s/deployment.yaml deploy/k8s/service.yaml deploy/k8s/ingress.yaml; do
           cat "$file" >> config.yaml.tpl
           printf '\n---\n' >> config.yaml.tpl
         done
-        sed "s#DOCKER_TAG#${SHORT_SHA}#g" config.yaml.tpl > config.yaml
+        sed "s#IMAGE_PLACEHOLDER#${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:${SHORT_SHA}#g" config.yaml.tpl > config.yaml
         test -f config.yaml
-    waitFor:
-      - "PUSH"
+    waitFor: ["PUSH"]
 
   - name: "gcr.io/cloud-builders/kubectl"
     id: DEPLOY_TO_GKE
-    args:
-      - "apply"
-      - "-f"
-      - "config.yaml"
+    args: ["apply", "-f", "config.yaml"]
     env:
       - "CLOUDSDK_COMPUTE_ZONE=${_GKE_ZONE}"
       - "CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}"
       - "KUBECONFIG=/tmp/kubeconfig"
-    waitFor:
-      - "RENDER_K8S"
+    waitFor: ["RENDER_K8S"]
 
   - name: "gcr.io/cloud-builders/kubectl"
     id: VERIFY_GKE_DEPLOYMENT
@@ -93,27 +92,19 @@ steps:
       - "CLOUDSDK_COMPUTE_ZONE=${_GKE_ZONE}"
       - "CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}"
       - "KUBECONFIG=/tmp/kubeconfig"
-    waitFor:
-      - "DEPLOY_TO_GKE"
+    waitFor: ["DEPLOY_TO_GKE"]
 
   - name: "gcr.io/cloud-builders/kubectl"
     id: LIST_GKE_RESOURCES
-    args:
-      - "get"
-      - "pods,service,ingress"
-      - "--namespace"
-      - "api-purchase"
+    args: ["get", "pods,service,ingress", "--namespace", "api-purchase"]
     env:
       - "CLOUDSDK_COMPUTE_ZONE=${_GKE_ZONE}"
       - "CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}"
       - "KUBECONFIG=/tmp/kubeconfig"
-    waitFor:
-      - "VERIFY_GKE_DEPLOYMENT"
+    waitFor: ["VERIFY_GKE_DEPLOYMENT"]
 
 images:
   - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:${SHORT_SHA}"
-
-logsBucket: gs://purchase-predict-haroun-2026/logs_build_cloud_build
 
 timeout: 2400s
 
@@ -121,9 +112,8 @@ substitutions:
   _ENV: staging
   _GKE_CLUSTER: purchase-predict-api
   _GKE_ZONE: europe-west1-b
-  _MLRUNS_GCS_PATH: gs://purchase-predict-haroun-2026/preprod/latest/mlruns
+  _MLRUNS_GCS_PATH: gs://your-gcs-bucket/prod/latest/mlruns
   _REGION: europe-west1
   _REGISTRY_NAME: purchase_predict
   _REPOSITORY: purchased-docker
   _SERVICE: purchase-predict-api
-  _TRACKING_URI: file:///workspace/mlruns

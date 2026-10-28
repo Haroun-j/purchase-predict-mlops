@@ -1,0 +1,123 @@
+# Pre-production pipeline: train, export the artifacts to preprod/, then rebuild and
+# redeploy the API on Cloud Run with the new model.
+#
+# The first four steps are the training build (see cloudbuild.pipeline.yaml). The last
+# one submits deploy/cloudbuild.api.yaml as a child build on a copy of api/ and deploy/
+# and waits for it. Submit from the repository root: deploy/scripts/run-preprod.sh
+steps:
+  - name: "ghcr.io/astral-sh/uv:python3.12-trixie-slim"
+    id: CI
+    dir: pipeline
+    entrypoint: /bin/sh
+    args:
+      - "-c"
+      - |
+        chmod a+x install.sh &&
+        ./install.sh &&
+        uv sync &&
+        uv run pytest tests/test_run.py tests/pipelines/loading tests/pipelines/processing
+    env:
+      - "UV_CACHE_DIR=/root/.cache/uv"
+      - "GCP_PROJECT_ID=$PROJECT_ID"
+      - "GCS_TEST_FOLDER=${_BUCKET}/data-test.csv"
+
+  - name: "ghcr.io/astral-sh/uv:python3.12-trixie-slim"
+    id: CD
+    dir: pipeline
+    entrypoint: /bin/sh
+    args:
+      - "-c"
+      - |
+        set -e
+        chmod a+x install.sh
+        ./install.sh
+        uv sync
+        cat > conf/local/parameters_loading.yml <<'EOF'
+        gcp_project_id: $PROJECT_ID
+        gcs_primary_folder: ${_BUCKET}/data/03_primary
+        EOF
+        uv run kedro run --params automl_max_evals=${_AUTOML_MAX_EVALS}
+    env:
+      - "ENV=${_ENV}"
+      - "MLFLOW_SERVER=file:///workspace/pipeline/mlruns"
+      - "DO_NOT_TRACK=1"
+      - "UV_CACHE_DIR=/root/.cache/uv"
+    waitFor: ["CI"]
+
+  - name: "ghcr.io/astral-sh/uv:python3.12-trixie-slim"
+    id: POST_CD_TESTS
+    dir: pipeline
+    entrypoint: /bin/sh
+    args:
+      - "-c"
+      - |
+        chmod a+x install.sh &&
+        ./install.sh &&
+        uv sync &&
+        uv run pytest
+    env:
+      - "UV_CACHE_DIR=/root/.cache/uv"
+    waitFor: ["CD"]
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: EXPORT_PREPROD_ARTIFACTS
+    dir: pipeline
+    entrypoint: /bin/sh
+    args:
+      - "-c"
+      - |
+        gcloud storage rm --recursive gs://${_BUCKET}/preprod/${BUILD_ID}/data || true
+        gcloud storage rm --recursive gs://${_BUCKET}/preprod/${BUILD_ID}/mlruns || true
+        gcloud storage rm --recursive gs://${_BUCKET}/preprod/latest/data || true
+        gcloud storage rm --recursive gs://${_BUCKET}/preprod/latest/mlruns || true
+        gcloud storage cp --recursive data gs://${_BUCKET}/preprod/${BUILD_ID} &&
+        gcloud storage cp --recursive mlruns gs://${_BUCKET}/preprod/${BUILD_ID} &&
+        gcloud storage cp --recursive data gs://${_BUCKET}/preprod/latest &&
+        gcloud storage cp --recursive mlruns gs://${_BUCKET}/preprod/latest
+    waitFor: ["POST_CD_TESTS"]
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: API_DEPLOY
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -e
+        rm -rf /tmp/release
+        mkdir -p /tmp/release
+        cp -R api deploy /tmp/release/
+        rm -rf /tmp/release/api/mlruns
+        SUBMIT_OUTPUT="$(gcloud builds submit /tmp/release \
+          --async \
+          --config deploy/cloudbuild.api.yaml \
+          --substitutions=_ENV=${_ENV},_IMAGE_TAG=${BUILD_ID},_MLRUNS_GCS_PATH=gs://${_BUCKET}/preprod/${BUILD_ID}/mlruns,_REGION=${_API_REGION},_REGISTRY_NAME=purchase_predict,_REPOSITORY=${_API_REPOSITORY},_SERVICE=${_API_SERVICE} \
+          2>&1)"
+        printf '%s\n' "$${SUBMIT_OUTPUT}"
+        CHILD_BUILD_ID="$(printf '%s\n' "$${SUBMIT_OUTPUT}" | grep -oE 'builds/[0-9a-f-]+' | head -n 1 | cut -d/ -f2)"
+        echo "CHILD_BUILD_ID=$${CHILD_BUILD_ID}"
+        test -n "$${CHILD_BUILD_ID}"
+        while true; do
+          STATUS="$(gcloud builds describe "$${CHILD_BUILD_ID}" --format='value(status)')"
+          echo "CHILD_BUILD_STATUS=$${STATUS}"
+          if [ "$${STATUS}" = "SUCCESS" ]; then
+            break
+          fi
+          case "$${STATUS}" in
+            FAILURE|INTERNAL_ERROR|TIMEOUT|CANCELLED|EXPIRED) exit 1 ;;
+          esac
+          sleep 15
+        done
+    waitFor: ["EXPORT_PREPROD_ARTIFACTS"]
+
+options:
+  machineType: "N1_HIGHCPU_8"
+
+timeout: 2400s
+
+substitutions:
+  _API_REGION: europe-west1
+  _API_REPOSITORY: purchased-docker
+  _API_SERVICE: purchase-predict-api
+  _AUTOML_MAX_EVALS: "1"
+  _BUCKET: your-gcs-bucket
+  _ENV: staging

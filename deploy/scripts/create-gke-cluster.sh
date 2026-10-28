@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-
+# Create the GKE cluster used by cloudbuild.gke.yaml (one e2-medium node, autoscaling
+# up to 5). The default 10 GB boot disk is too small for the GKE node image, hence
+# --disk-size 20. Usage: deploy/scripts/create-gke-cluster.sh
 set -euo pipefail
 
-PROJECT_ID="${PROJECT_ID:-purchase-predict-mlops}"
+PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project)}"
 GKE_CLUSTER="${GKE_CLUSTER:-purchase-predict-api}"
 GKE_ZONE="${GKE_ZONE:-europe-west1-b}"
 
@@ -34,9 +36,8 @@ CLUSTER_STATUS="$(gcloud container clusters describe "${GKE_CLUSTER}" --zone "${
 echo "CLUSTER_STATUS=${CLUSTER_STATUS}"
 
 if [ "${CLUSTER_STATUS}" != "RUNNING" ]; then
-  echo "Cluster exists but is not RUNNING. Delete it and recreate it with a larger disk."
-  echo "Suggested command:"
-  echo "gcloud container clusters delete ${GKE_CLUSTER} --zone ${GKE_ZONE} --quiet"
+  echo "The cluster exists but is not RUNNING. Delete it and run this script again:"
+  echo "  gcloud container clusters delete ${GKE_CLUSTER} --zone ${GKE_ZONE} --quiet"
   exit 1
 fi
 

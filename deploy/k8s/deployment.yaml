@@ -10,6 +10,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
+      # The cluster is small (e2-medium nodes); replace pods one at a time instead of
+      # asking for an extra one during the rollout.
       maxUnavailable: 1
       maxSurge: 0
   selector:
@@ -22,7 +24,8 @@ spec:
     spec:
       containers:
         - name: pod-purchase-predict
-          image: europe-west1-docker.pkg.dev/purchase-predict-mlops/purchased-docker/purchase-predict-api:DOCKER_TAG
+          # Replaced by cloudbuild.gke.yaml with <region>-docker.pkg.dev/<project>/<repo>/purchase-predict-api:<tag>
+          image: IMAGE_PLACEHOLDER
           imagePullPolicy: Always
           env:
             - name: PORT

@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+# First deployment of the API on Cloud Run: creates the Artifact Registry repository
+# and the runtime service account, builds the image from api/ (with the model store
+# shipped in the repository) and deploys it. Later deployments go through
+# deploy/cloudbuild.api.yaml. Usage: deploy/scripts/bootstrap-cloud-run.sh
 set -euo pipefail
+cd "$(dirname "$0")/../.."
 
-PROJECT_ID="$(gcloud config get-value project)"
+PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project)}"
 REGION="${REGION:-europe-west1}"
 REPOSITORY="${REPOSITORY:-purchased-docker}"
 SERVICE="${SERVICE:-purchase-predict-api}"
@@ -10,9 +15,6 @@ SERVICE_ACCOUNT="${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${SERVICE}:latest"
 
 echo "PROJECT_ID=${PROJECT_ID}"
-echo "REGION=${REGION}"
-echo "REPOSITORY=${REPOSITORY}"
-echo "SERVICE=${SERVICE}"
 echo "IMAGE=${IMAGE}"
 
 gcloud services enable \
@@ -25,15 +27,15 @@ if ! gcloud artifacts repositories describe "${REPOSITORY}" --location="${REGION
   gcloud artifacts repositories create "${REPOSITORY}" \
     --repository-format=docker \
     --location="${REGION}" \
-    --description="Docker images for purchase predict API"
+    --description="Docker images of the purchase-predict API"
 fi
 
 if ! gcloud iam service-accounts describe "${SERVICE_ACCOUNT}" >/dev/null 2>&1; then
   gcloud iam service-accounts create "${SERVICE_ACCOUNT_NAME}" \
-    --display-name="Purchase Predict API Cloud Run"
+    --display-name="purchase-predict API runtime"
 fi
 
-gcloud builds submit . --tag "${IMAGE}"
+gcloud builds submit api --tag "${IMAGE}"
 
 gcloud run deploy "${SERVICE}" \
   --image "${IMAGE}" \
@@ -57,5 +59,5 @@ echo
 echo "POST /predict"
 curl -sS -X POST "${CLOUD_RUN_URL}/predict" \
   -H "Content-Type: application/json" \
-  --data-binary @sample-payload.json
+  --data-binary @api/sample-payload.json
 echo
