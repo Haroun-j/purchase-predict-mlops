@@ -1,0 +1,15 @@
+services:
+  api:
+    build: .
+    image: purchase-predict-api:latest
+    ports:
+      - "8080:80"
+    environment:
+      ENV: staging
+      MLFLOW_REGISTRY_NAME: purchase_predict
+      # The image ships the registered model under /app/mlruns. To serve the store
+      # produced by the Kedro pipeline instead, mount it and point MLFLOW_SERVER at it:
+      #   volumes: ["../pipeline/mlruns:/mlruns:ro"]   and   MLFLOW_SERVER: file:///mlruns
+      MLFLOW_SERVER: file:///app/mlruns
+      PORT: "80"
+      WEB_CONCURRENCY: "2"
