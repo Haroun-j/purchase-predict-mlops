@@ -1,0 +1,2 @@
+gcp_project_id: local
+gcs_primary_folder: data/03_primary/primary.csv

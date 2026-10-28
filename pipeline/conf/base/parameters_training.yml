@@ -1,0 +1,4 @@
+automl_max_evals: 10
+mlflow_enabled: true
+mlflow_experiment_id: -1
+mlflow_model_registry: purchase_predict
