@@ -1,0 +1,14 @@
+aliases: []
+creation_timestamp: 1776871248182
+current_stage: None
+description: null
+last_updated_timestamp: 1776871248182
+name: purchase_predict
+run_id: null
+run_link: null
+source: runs:/f4c8739c60d14702966ff17a103d55e9/model
+status: READY
+status_message: null
+storage_location: runs:/f4c8739c60d14702966ff17a103d55e9/model
+user_id: null
+version: 1

@@ -1,0 +1,16 @@
+artifact_uri: file:///app/mlruns/253693783292120230/460095c81c93400893834dce6945c5a1/artifacts
+deleted_time: 1776871643859
+end_time: 1776871182124
+entry_point_name: ''
+experiment_id: '253693783292120230'
+lifecycle_stage: deleted
+run_id: 460095c81c93400893834dce6945c5a1
+run_name: hilarious-ape-916
+run_uuid: 460095c81c93400893834dce6945c5a1
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1776871178834
+status: 4
+tags: []
+user_id: unknown

@@ -1,13 +1,14 @@
 import os
 import re
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
 
 import joblib
 import mlflow
 import mlflow.sklearn
 import pandas as pd
 from mlflow.tracking import MlflowClient
+from mlflow.utils.file_utils import local_file_uri_to_path
 
 ENV = os.environ["ENV"]
 MLFLOW_REGISTRY_NAME = os.environ["MLFLOW_REGISTRY_NAME"]
@@ -31,15 +32,19 @@ def _run_id_from_source(source: str) -> str:
 
 def _local_tracking_root() -> Path | None:
     uri = mlflow.get_tracking_uri()
-    parsed = urlparse(uri)
-    if parsed.scheme == "file":
-        return Path(unquote(parsed.path))
-    if not parsed.scheme:
-        return Path(uri)
+    if urlparse(uri).scheme in ("", "file"):
+        return Path(local_file_uri_to_path(uri))
     return None
 
 
 def _find_local_artifact(run_id: str, artifact_path: str) -> Path | None:
+    """Locate an artifact inside a local file store, whatever `artifact_uri` says.
+
+    MLflow's file store records absolute artifact paths. They stop being valid as
+    soon as the store is copied somewhere else (into the Docker image, into a Cloud
+    Build workspace, onto another machine), so we fall back to looking the run up
+    under the tracking root we were actually given.
+    """
     tracking_root = _local_tracking_root()
     if tracking_root is None or not tracking_root.exists():
         return None

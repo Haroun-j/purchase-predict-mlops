@@ -1,0 +1,15 @@
+artifact_uri: file:///app/mlruns/253693783292120230/f4c8739c60d14702966ff17a103d55e9/artifacts
+end_time: 1776871248052
+entry_point_name: ''
+experiment_id: '253693783292120230'
+lifecycle_stage: active
+run_id: f4c8739c60d14702966ff17a103d55e9
+run_name: lyrical-loon-679
+run_uuid: f4c8739c60d14702966ff17a103d55e9
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1776871231185
+status: 3
+tags: []
+user_id: unknown

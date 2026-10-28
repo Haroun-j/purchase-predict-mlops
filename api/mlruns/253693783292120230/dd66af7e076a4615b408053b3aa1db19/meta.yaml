@@ -1,0 +1,15 @@
+artifact_uri: file:///app/mlruns/253693783292120230/dd66af7e076a4615b408053b3aa1db19/artifacts
+end_time: 1776880523567
+entry_point_name: ''
+experiment_id: '253693783292120230'
+lifecycle_stage: active
+run_id: dd66af7e076a4615b408053b3aa1db19
+run_name: agreeable-mink-28
+run_uuid: dd66af7e076a4615b408053b3aa1db19
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1776880510207
+status: 3
+tags: []
+user_id: unknown

@@ -1,0 +1,1 @@
+{"columns": ["product_id", "brand", "price", "num_views_session", "num_views_product", "category", "sub_category", "hour", "minute", "weekday", "duration", "num_prev_sessions", "num_prev_product_views"], "data": [[1004856, 543, 132.87, 5, 1, 7, 29, 16, 36, 1, 193, 0, 0]]}

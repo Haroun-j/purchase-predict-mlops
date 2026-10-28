@@ -1,0 +1,6 @@
+artifact_location: file:///app/mlruns/253693783292120230
+creation_time: 1776871168624
+experiment_id: '253693783292120230'
+last_update_time: 1776871168624
+lifecycle_stage: active
+name: purchase_predict
